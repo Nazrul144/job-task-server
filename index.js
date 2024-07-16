@@ -56,26 +56,29 @@ async function run() {
     });
 
     app.post('/api/login', async (req, res) => {
-      const { email, pin } = req.body;
-
-      try {
-        const user = await usersCollection.findOne({ email });
-        if (!user) {
-          return res.status(400).json({ message: 'Invalid credentials' });
+        const { email, phone, pin } = req.body;
+      
+        try {
+          const query = email ? { email } : { phone };
+          const user = await usersCollection.findOne(query);
+          if (!user) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+          }
+      
+          const isMatch = await bcrypt.compare(pin, user.pin);
+          if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+          }
+      
+          // Generate a JWT token
+          const token = jwt.sign({ id: user._id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+          res.status(200).json({ message: 'Login successful', token });
+        } catch (error) {
+          res.status(500).json({ message: 'Server error', error });
         }
+      });
+      
 
-        const isMatch = await bcrypt.compare(pin, user.pin);
-        if (!isMatch) {
-          return res.status(400).json({ message: 'Invalid credentials' });
-        }
-
-        // Generate a JWT token
-        const token = jwt.sign({ id: user._id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
-        res.status(200).json({ message: 'Login successful', token });
-      } catch (error) {
-        res.status(500).json({ message: 'Server error', error });
-      }
-    });
 
     app.get('/', (req, res) => {
       res.send('Server is running');
