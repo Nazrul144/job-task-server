@@ -14,7 +14,6 @@ app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.zvedd86.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -43,6 +42,7 @@ async function run() {
         email,
         phone,
         status: 'pending',
+        balance: 0, // Initial balance
       };
 
       try {
@@ -56,29 +56,54 @@ async function run() {
     });
 
     app.post('/api/login', async (req, res) => {
-        const { email, phone, pin } = req.body;
-      
-        try {
-          const query = email ? { email } : { phone };
-          const user = await usersCollection.findOne(query);
-          if (!user) {
-            return res.status(400).json({ message: 'Invalid credentials' });
-          }
-      
-          const isMatch = await bcrypt.compare(pin, user.pin);
-          if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid credentials' });
-          }
-      
-          // Generate a JWT token
-          const token = jwt.sign({ id: user._id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
-          res.status(200).json({ message: 'Login successful', token });
-        } catch (error) {
-          res.status(500).json({ message: 'Server error', error });
-        }
-      });
-      
+      const { email, phone, pin } = req.body;
 
+      try {
+        const query = email ? { email } : { phone };
+        const user = await usersCollection.findOne(query);
+        if (!user) {
+          return res.status(400).json({ message: 'Invalid credentials' });
+        }
+
+        if (user.status !== 'active') {
+          return res.status(400).json({ message: 'Account not activated' });
+        }
+
+        const isMatch = await bcrypt.compare(pin, user.pin);
+        if (!isMatch) {
+          return res.status(400).json({ message: 'Invalid credentials' });
+        }
+
+        const token = jwt.sign({ id: user._id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+        res.status(200).json({ message: 'Login successful', token });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+      }
+    });
+
+    app.post('/api/activate', async (req, res) => {
+      const { userId } = req.body;
+
+      try {
+        const user = await usersCollection.findOne({ _id: new MongoClient.ObjectId(userId) });
+        if (!user) {
+          return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (user.status === 'active') {
+          return res.status(400).json({ message: 'User is already active' });
+        }
+
+        const updatedUser = await usersCollection.updateOne(
+          { _id: new MongoClient.ObjectId(userId) },
+          { $set: { status: 'active', balance: 40 } }
+        );
+
+        res.status(200).json({ message: 'User activated and bonus credited' });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+      }
+    });
 
     app.get('/', (req, res) => {
       res.send('Server is running');
